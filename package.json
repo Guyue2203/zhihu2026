@@ -1,0 +1,10 @@
+{
+  "name": "zhihu-hackathon-2026-mvp",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node --env-file=.env.local server.mjs",
+    "test": "node core.mjs --self-test"
+  }
+}
+
