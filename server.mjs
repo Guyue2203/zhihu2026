@@ -6,6 +6,7 @@ import { buildJourney } from './core.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const page = await readFile(path.join(root, 'index.html'));
+const curationPage = await readFile(path.join(root, 'curation.html'));
 const host = '127.0.0.1';
 const port = Number(process.env.PORT) || 3000;
 const frontendOrigin = process.env.FRONTEND_ORIGIN || '';
@@ -53,6 +54,10 @@ const server = http.createServer(async (request, response) => {
     if (request.method === 'GET' && url.pathname === '/') {
       response.writeHead(200, headers('text/html; charset=utf-8'));
       return response.end(page);
+    }
+    if (request.method === 'GET' && url.pathname === '/curation.html') {
+      response.writeHead(200, headers('text/html; charset=utf-8'));
+      return response.end(curationPage);
     }
     if (request.method === 'GET' && url.pathname === '/api/v1/health') return json(request, response, 200, {
       status: 'ok',
