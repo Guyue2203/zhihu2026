@@ -2,7 +2,7 @@ import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { buildJourney } from './core.mjs';
+import { buildJourney, buildPrelude } from './core.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const page = await readFile(path.join(root, 'index.html'));
@@ -64,11 +64,18 @@ const server = http.createServer(async (request, response) => {
       mode: process.env.BACKEND_MODE || 'live',
       configured: { zhihu: Boolean(process.env.ZHIHU_ACCESS_SECRET), deepseek: Boolean(process.env.DEEPSEEK_API_KEY) },
     });
+    if (request.method === 'POST' && url.pathname === '/api/v1/prelude') {
+      const { query } = await readJson(request);
+      const requestedMode = url.searchParams.get('mode');
+      if (requestedMode && !['fixture', 'live'].includes(requestedMode)) throw Object.assign(new Error('mode 只能是 fixture 或 live'), { status: 400, code: 'INPUT_INVALID' });
+      return json(request, response, 200, await buildPrelude(query, requestedMode || undefined));
+    }
     if (request.method === 'POST' && (url.pathname === '/api/search' || url.pathname === '/api/v1/journey')) {
       const { query } = await readJson(request);
       const requestedMode = url.searchParams.get('mode');
       if (requestedMode && !['fixture', 'live'].includes(requestedMode)) throw Object.assign(new Error('mode 只能是 fixture 或 live'), { status: 400, code: 'INPUT_INVALID' });
-      return json(request, response, 200, await buildJourney(query, requestedMode || undefined));
+      const refresh = ['1', 'true'].includes(url.searchParams.get('refresh'));
+      return json(request, response, 200, await buildJourney(query, requestedMode || undefined, { refresh }));
     }
     return json(request, response, 404, { error: '接口不存在', code: 'NOT_FOUND' });
   } catch (error) {

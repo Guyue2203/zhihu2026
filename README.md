@@ -24,10 +24,12 @@ query
 知乎黑客松2026/
 ├── .env.example        # 环境变量模板，无真实密钥
 ├── .env.local          # 本机密钥，不得提交或外传
+├── .cache/             # Live 生成结果本地缓存，运行时生成，不提交
 ├── .gitignore
 ├── core.mjs            # DS、爬虫、知乎检索、校验、总流程
 ├── server.mjs          # HTTP 服务和路由
 ├── index.html          # 输入、等待态、时间线和帖子页面
+├── curation.html       # 策展交互原型（硬编码案例，待绑定原帖）
 ├── package.json
 ├── README.md           # 运行、接口和联调说明
 └── 产品与技术方案.md    # 产品定义、架构和研发边界
@@ -64,6 +66,7 @@ Copy-Item .env.example .env.local
 | `ZHIHU_API_BASE_URL` | 是 | 知乎 API 根地址 | `https://developer.zhihu.com` |
 | `ZHIHU_SEARCH_COUNT` | 否 | 每次知乎搜索数量 | `10`，官方接口上限为 10 |
 | `ZHIHU_TIMEOUT_MS` | 否 | 知乎请求超时 | `30000` |
+| `JOURNEY_CACHE_TTL_MS` | 否 | Live 生成结果本地缓存有效期 | `604800000`（7 天）；设为 `0` 停用缓存 |
 | `DEEPSEEK_API_KEY` | Live 必填 | 时间线规划与总结 | DeepSeek 或队伍获得的兼容服务密钥 |
 | `DEEPSEEK_BASE_URL` | 是 | Chat Completions 根地址 | 官方为 `https://api.deepseek.com`；补贴网关按提供方说明填写 |
 | `DEEPSEEK_MODEL` | 是 | 调用的模型名 | 官方 DeepSeek 用 `deepseek-chat`；兼容网关使用其公布的模型名 |
@@ -150,7 +153,7 @@ Content-Type: application/json
 }
 ```
 
-`POST /api/search` 是兼容别名，新代码统一使用 `/api/v1/journey`。两者都可添加 `?mode=fixture` 或 `?mode=live`；其他值返回 `400 INPUT_INVALID`。
+`POST /api/search` 是兼容别名，新代码统一使用 `/api/v1/journey`。两者都可添加 `?mode=fixture` 或 `?mode=live`；其他值返回 `400 INPUT_INVALID`。追加 `?refresh=1` 可绕过本地缓存强制重新生成（详见「生成结果本地缓存」）。
 
 ### 核心响应字段
 
@@ -169,6 +172,37 @@ Content-Type: application/json
 | `coverage` | `fixture` 或 `sampled` |
 | `limitations` | 本次结果的证据边界 |
 
+### 等待页过渡文案
+
+```http
+POST /api/v1/prelude
+Content-Type: application/json
+```
+
+```json
+{
+  "query": "共享单车为什么失败？"
+}
+```
+
+- 主流程生成较慢时，前端并行调用此接口获取与问题相关的过渡文字。
+- live 模式先查生成结果缓存：命中说明等待极短，直接返回空 `prelude`，不调用 DeepSeek。
+- DeepSeek 失败或输出为空时回退到模板文案，接口始终返回 200（输入不合法除外）。
+- 支持 `?mode=fixture` / `?mode=live`，语义与主接口一致。
+
+## 生成结果本地缓存
+
+Live 模式每次成功生成的完整时间线结果都会写入本地 JSON 缓存，目录为 `.cache/journey/`（已被 `.gitignore` 忽略）：
+
+- 缓存键为规范化后的 query；命中时直接返回完整结果，不再调用 DeepSeek、爬虫或知乎接口，也不要求任何密钥存在。
+- 缓存内容与接口响应使用同一 JSON 契约，可直接人工审阅；文件内含 `fetchedAt` / `fetchedAtIso` 便于核查生成时间。
+- `JOURNEY_CACHE_TTL_MS` 控制有效期，默认 7 天；设为 `0` 停用缓存读写。
+- 写入使用「临时文件 + rename」原子替换；缓存读写失败一律静默降级，不影响真实请求。
+- 生成失败不写缓存，下次请求自动重试完整链路。
+- `POST /api/v1/journey?refresh=1` 强制绕过缓存重新生成并更新缓存。
+- Fixture 模式不读也不写缓存。
+- 路演前可将核心 query 的缓存文件人工审核后另行归档，作为快照数据源。
+
 ## 当前爬虫如何工作
 
 `crawlStage(stage)` 是本地轻量爬虫，不使用第三方包：
@@ -182,7 +216,7 @@ Content-Type: application/json
 7. 将 `queryHint` 送入知乎官方搜索接口。
 8. 爬虫为空或失败时，退回 DeepSeek 生成的 `searchQueries`。
 
-爬虫只负责发现线索，不负责确认来源。最终标题、作者、摘要、互动量和链接必须来自知乎官方接口。
+爬虫只负责发现线索，不负责确认来源。最终标题、作者、摘要、互动量和链接必须来自知乎官方接口。爬虫状态只用于页面展示与诊断，**不进入 DeepSeek 总结的输入**；爬虫未成功的阶段由后端在 `limitations` 中追加固定降级说明，避免模型误读接口状态。
 
 ## 热度参考分
 
@@ -202,6 +236,7 @@ heat = ln(1 + 赞同数) × 10
 | 项目 | 固定约定 |
 |---|---|
 | 主接口 | `POST /api/v1/journey` |
+| 过渡文案 | `POST /api/v1/prelude`，可选；失败时前端保留默认等待文案 |
 | 输入字段 | `query`，2—100 个字符 |
 | 阶段主键 | `stage-1`、`stage-2` 等稳定 ID |
 | 帖子关联 | `stages[].postIds` 引用 `posts[].id` |
