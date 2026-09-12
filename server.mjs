@@ -2,11 +2,10 @@ import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { buildJourney, buildPrelude } from './core.mjs';
+import { buildJourney, buildPrelude, getHotList } from './core.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
-const page = await readFile(path.join(root, 'index.html'));
-const curationPage = await readFile(path.join(root, 'curation.html'));
+const readPage = name => readFile(path.join(root, name));
 const host = '127.0.0.1';
 const port = Number(process.env.PORT) || 3000;
 const frontendOrigin = process.env.FRONTEND_ORIGIN || '';
@@ -16,7 +15,7 @@ const headers = type => ({
   'Cache-Control': 'no-store',
   'X-Content-Type-Options': 'nosniff',
   'Referrer-Policy': 'no-referrer',
-  'Content-Security-Policy': "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'none'; frame-ancestors 'none'; base-uri 'none'",
+  'Content-Security-Policy': "default-src 'self'; style-src 'self' 'unsafe-inline' https://unpkg.zhimg.com; script-src 'self' 'unsafe-inline'; connect-src 'self'; font-src 'self' https://unpkg.zhimg.com; img-src 'none'; frame-ancestors 'none'; base-uri 'none'",
 });
 
 function json(request, response, status, value) {
@@ -53,29 +52,36 @@ const server = http.createServer(async (request, response) => {
     }
     if (request.method === 'GET' && url.pathname === '/') {
       response.writeHead(200, headers('text/html; charset=utf-8'));
-      return response.end(page);
+      return response.end(await readPage('index.html'));
     }
     if (request.method === 'GET' && url.pathname === '/curation.html') {
       response.writeHead(200, headers('text/html; charset=utf-8'));
-      return response.end(curationPage);
+      return response.end(await readPage('curation.html'));
+    }
+    if (request.method === 'GET' && url.pathname === '/zhihu-logo.png') {
+      response.writeHead(200, headers('image/png'));
+      return response.end(await readPage('zhihu-logo.png'));
     }
     if (request.method === 'GET' && url.pathname === '/api/v1/health') return json(request, response, 200, {
       status: 'ok',
-      mode: process.env.BACKEND_MODE || 'live',
       configured: { zhihu: Boolean(process.env.ZHIHU_ACCESS_SECRET), deepseek: Boolean(process.env.DEEPSEEK_API_KEY) },
     });
+    if (request.method === 'GET' && url.pathname === '/api/v1/hot') {
+      const limit = Number(url.searchParams.get('limit')) || undefined;
+      const refresh = ['1', 'true'].includes(url.searchParams.get('refresh'));
+      const responseHeaders = headers('application/json; charset=utf-8');
+      responseHeaders['Cache-Control'] = 'public, max-age=300';
+      response.writeHead(200, responseHeaders);
+      return response.end(JSON.stringify(await getHotList({ limit, refresh })));
+    }
     if (request.method === 'POST' && url.pathname === '/api/v1/prelude') {
-      const { query } = await readJson(request);
-      const requestedMode = url.searchParams.get('mode');
-      if (requestedMode && !['fixture', 'live'].includes(requestedMode)) throw Object.assign(new Error('mode 只能是 fixture 或 live'), { status: 400, code: 'INPUT_INVALID' });
-      return json(request, response, 200, await buildPrelude(query, requestedMode || undefined));
+      const { query, stagePreference, retrieval } = await readJson(request);
+      return json(request, response, 200, await buildPrelude(query, { stagePreference, retrieval }));
     }
     if (request.method === 'POST' && (url.pathname === '/api/search' || url.pathname === '/api/v1/journey')) {
-      const { query } = await readJson(request);
-      const requestedMode = url.searchParams.get('mode');
-      if (requestedMode && !['fixture', 'live'].includes(requestedMode)) throw Object.assign(new Error('mode 只能是 fixture 或 live'), { status: 400, code: 'INPUT_INVALID' });
+      const { query, stagePreference, retrieval } = await readJson(request);
       const refresh = ['1', 'true'].includes(url.searchParams.get('refresh'));
-      return json(request, response, 200, await buildJourney(query, requestedMode || undefined, { refresh }));
+      return json(request, response, 200, await buildJourney(query, { refresh, stagePreference, retrieval }));
     }
     return json(request, response, 404, { error: '接口不存在', code: 'NOT_FOUND' });
   } catch (error) {

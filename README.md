@@ -1,8 +1,8 @@
-# 转变之前
+# 此一时，彼一时
 
 ## 项目状态
 
-**转变之前**是一款时间型知识阅读工具：用户输入一个问题，系统先规划待验证的认知阶段，再为每个阶段发现检索线索，通过知乎官方接口定位帖子，最终生成可追溯的认知变化时间线。
+**此一时，彼一时**是一款时间型知识阅读工具。它基于一个判断：问题的答案不是固定的，同一个问题在不同时空会得到不同解答。用户输入一个问题，系统先规划待验证的认知阶段，再为每个阶段发现检索线索，通过知乎官方接口定位帖子，最终生成可追溯的认知变化时间线。
 
 当前链路：
 
@@ -16,7 +16,7 @@ query
 → 前端展示时间线、帖子和局限
 ```
 
-必须明确：当前知乎搜索单次最多返回 **10 条**，因此结果是 `sampled`，不能称为完整历史。`fixture` 只是接口联调数据。
+必须明确：当前知乎搜索单次最多返回 **10 条**，因此结果是 `sampled`，不能称为完整历史。
 
 ## 目录
 
@@ -24,14 +24,15 @@ query
 知乎黑客松2026/
 ├── .env.example        # 环境变量模板，无真实密钥
 ├── .env.local          # 本机密钥，不得提交或外传
-├── .cache/             # Live 生成结果本地缓存，运行时生成，不提交
+├── .cache/             # 生成结果与热搜的本地缓存，运行时生成，不提交
 ├── .gitignore
 ├── core.mjs            # DS、爬虫、知乎检索、校验、总流程
 ├── server.mjs          # HTTP 服务和路由
 ├── index.html          # 输入、等待态、时间线和帖子页面
 ├── curation.html       # 策展交互原型（硬编码案例，待绑定原帖）
+├── zhihu-logo.png      # 粒子背景采样用的知乎 logo
 ├── package.json
-├── README.md           # 运行、接口和联调说明
+├── README.md           # 运行、接口和验证说明
 └── 产品与技术方案.md    # 产品定义、架构和研发边界
 ```
 
@@ -60,7 +61,6 @@ Copy-Item .env.example .env.local
 
 | 变量 | 必填 | 作用 | 建议值或来源 |
 |---|---:|---|---|
-| `BACKEND_MODE` | 是 | 默认运行模式 | 真实调用用 `live`，纯页面联调用 `fixture` |
 | `PORT` | 否 | 本地服务端口 | 默认 `3000` |
 | `ZHIHU_ACCESS_SECRET` | Live 必填 | 知乎开放平台 Bearer 凭证 | [知乎开放平台个人中心](https://developer.zhihu.com/profile) |
 | `ZHIHU_API_BASE_URL` | 是 | 知乎 API 根地址 | `https://developer.zhihu.com` |
@@ -73,11 +73,12 @@ Copy-Item .env.example .env.local
 | `DEEPSEEK_TIMEOUT_MS` | 否 | DeepSeek 请求超时 | `90000` |
 | `CRAWLER_ENABLED` | 否 | 是否开启公开页线索发现 | `true` |
 | `CRAWLER_TIMEOUT_MS` | 否 | 爬虫请求超时 | `8000` |
+| `ZHIHU_HOT_LIMIT` | 否 | 首页热搜轮播条数 | `20`，官方接口上限为 30 |
+| `HOT_CACHE_TTL_MS` | 否 | 知乎热搜本地缓存有效期 | `600000`（10 分钟）；设为 `0` 停用缓存 |
 
-最小 Live 配置：
+最小配置：
 
 ```dotenv
-BACKEND_MODE=live
 ZHIHU_ACCESS_SECRET=从知乎开放平台获取的Access-Secret
 ZHIHU_API_BASE_URL=https://developer.zhihu.com
 DEEPSEEK_API_KEY=你的DeepSeek或兼容网关密钥
@@ -89,33 +90,17 @@ DEEPSEEK_MODEL=deepseek-chat
 
 ## 快速启动
 
-### Fixture 联调
+`npm start` 以 `node --watch` 运行：修改 `core.mjs`、`server.mjs` 时进程会自动重启；`index.html`、`curation.html` 每次请求都从磁盘读取，保存后**直接刷新浏览器**即可生效，无需重启服务。修改 `.env.local` 或 `package.json` 仍需手动重启。
 
-Fixture 不调用 DeepSeek、知乎接口或爬虫，用于验证页面和数据结构。
-
-```powershell
-$env:BACKEND_MODE='fixture'
-npm start
-```
-
-打开 [http://127.0.0.1:3000/](http://127.0.0.1:3000/)。
-
-也可以直接通过网址后缀切换模式，无需重启服务：
-
-```text
-http://127.0.0.1:3000/?mode=fixture
-http://127.0.0.1:3000/?mode=live
-```
-
-无后缀时沿用服务启动环境中的 `BACKEND_MODE`。页面右上角提供两个等价链接。
-
-### Live 真实链路
+页面字体使用 MiSans（知乎同款，通过 `unpkg.zhimg.com` 加载，CSP 已放行该来源）；离线时自动回退到系统字体，不影响功能。
 
 启动：
 
 ```powershell
 npm start
 ```
+
+打开 [http://127.0.0.1:3000/](http://127.0.0.1:3000/)。
 
 若知乎返回 `Authorization failed`，表示 `ZHIHU_ACCESS_SECRET` 无效、过期或权限未开通，代码无法绕过官方鉴权。
 
@@ -132,7 +117,6 @@ GET /api/v1/health
 ```json
 {
   "status": "ok",
-  "mode": "fixture",
   "configured": {
     "zhihu": true,
     "deepseek": true
@@ -149,11 +133,28 @@ Content-Type: application/json
 
 ```json
 {
-  "query": "共享单车为什么失败？"
+  "query": "共享单车为什么失败？",
+  "stagePreference": "default",
+  "retrieval": "zhihu"
 }
 ```
 
-`POST /api/search` 是兼容别名，新代码统一使用 `/api/v1/journey`。两者都可添加 `?mode=fixture` 或 `?mode=live`；其他值返回 `400 INPUT_INVALID`。追加 `?refresh=1` 可绕过本地缓存强制重新生成（详见「生成结果本地缓存」）。
+`stagePreference` 可选，控制生成结果的阶段数量，只接受三个值：
+
+| 值 | 含义 |
+|---|---|
+| `default`（缺省同此） | 约 3 个阶段，模型按问题复杂度调整 |
+| `fewer` | 在保持认知变化完整的前提下适当减少阶段数量 |
+| `more` | 当确实存在认知转折时适当增加阶段数量（上限 6 个） |
+
+`retrieval` 可选，控制信息来源，只接受两个值：
+
+| 值 | 含义 |
+|---|---|
+| `zhihu`（缺省同此） | 检索知乎官方接口，结果绑定真实帖子 |
+| `model` | 不检索知乎，时间线由模型知识整理（是否联网取决于模型通道能力），结果不含帖子证据，`coverage` 为 `model` |
+
+`POST /api/search` 是兼容别名，新代码统一使用 `/api/v1/journey`。追加 `?refresh=1` 可绕过本地缓存强制重新生成（详见「生成结果本地缓存」）。
 
 ### 核心响应字段
 
@@ -163,14 +164,25 @@ Content-Type: application/json
 | `title` | 时间线标题 |
 | `thesis` | 认知转变主线 |
 | `stages` | 按时间或认知顺序排列的阶段 |
-| `crawlerStatus` | `ok`、`empty`、`timeout`、`http_error`、`fallback_query`、`disabled`、`fixture` |
+| `crawlerStatus` | `ok`、`empty`、`timeout`、`http_error`、`fallback_query`、`disabled` |
 | `crawlerQuery` | 本阶段实际送入知乎接口的首个 query |
 | `crawlHitCount` | 爬虫提取到的候选数量 |
 | `crawlerHttpStatus` / `crawlerErrorCode` | 抓取失败时的安全化诊断信息 |
 | `postIds` | 本阶段引用的正式知乎帖子 ID |
 | `posts` | 经过知乎接口确认的帖子 |
-| `coverage` | `fixture` 或 `sampled` |
+| `coverage` | `sampled` 或 `model`（未启用知乎检索） |
 | `limitations` | 本次结果的证据边界 |
+
+### 知乎热搜
+
+```http
+GET /api/v1/hot?limit=20
+```
+
+- 调用知乎官方热榜接口 `/api/v1/content/hot_list`，返回 `{ items, fetchedAt, fetchedAtIso, cached }`，每项含 `title`、`url`、`summary`、`thumbnailUrl`。
+- 只接受 `https://zhihu.com` 及其子域名链接，与主流程同一条来源规则。
+- 首页「想了解点什么？」右侧以轮播方式展示当前知乎热搜（同时显示 3 条，每 5.2 秒整体上移一条；窄屏堆叠到下方），左边缘与搜索框中点对齐，按钮样式与推荐问题一致；点击标题填入输入框，回车开始检索。
+- 缓存命中时不消耗知乎 `hot_list` 额度；上游失败时前端隐藏该模块，不影响提问主流程。
 
 ### 等待页过渡文案
 
@@ -186,21 +198,21 @@ Content-Type: application/json
 ```
 
 - 主流程生成较慢时，前端并行调用此接口获取与问题相关的过渡文字。
-- live 模式先查生成结果缓存：命中说明等待极短，直接返回空 `prelude`，不调用 DeepSeek。
+- 先查生成结果缓存：命中说明等待极短，直接返回空 `prelude`，不调用 DeepSeek。
 - DeepSeek 失败或输出为空时回退到模板文案，接口始终返回 200（输入不合法除外）。
-- 支持 `?mode=fixture` / `?mode=live`，语义与主接口一致。
+- 请求体支持与主接口相同的 `stagePreference` 与 `retrieval`，用于判断对应变体是否已缓存。
 
 ## 生成结果本地缓存
 
-Live 模式每次成功生成的完整时间线结果都会写入本地 JSON 缓存，目录为 `.cache/journey/`（已被 `.gitignore` 忽略）：
+每次成功生成的完整时间线结果都会写入本地 JSON 缓存，目录为 `.cache/journey/`（已被 `.gitignore` 忽略）：
 
-- 缓存键为规范化后的 query；命中时直接返回完整结果，不再调用 DeepSeek、爬虫或知乎接口，也不要求任何密钥存在。
+- 缓存键为「规范化后的 query + 阶段偏好 + 来源模式」（`default` / `zhihu` 与缺省视为同一键）；命中时直接返回完整结果，不再调用 DeepSeek、爬虫或知乎接口，也不要求任何密钥存在。
 - 缓存内容与接口响应使用同一 JSON 契约，可直接人工审阅；文件内含 `fetchedAt` / `fetchedAtIso` 便于核查生成时间。
 - `JOURNEY_CACHE_TTL_MS` 控制有效期，默认 7 天；设为 `0` 停用缓存读写。
+- 热搜另有独立缓存 `.cache/hot/list.json`（键为请求条数），由 `HOT_CACHE_TTL_MS` 控制，默认 10 分钟；同样使用「临时文件 + rename」原子写入，读写失败静默降级。
 - 写入使用「临时文件 + rename」原子替换；缓存读写失败一律静默降级，不影响真实请求。
 - 生成失败不写缓存，下次请求自动重试完整链路。
 - `POST /api/v1/journey?refresh=1` 强制绕过缓存重新生成并更新缓存。
-- Fixture 模式不读也不写缓存。
 - 路演前可将核心 query 的缓存文件人工审核后另行归档，作为快照数据源。
 
 ## 当前爬虫如何工作
@@ -236,14 +248,17 @@ heat = ln(1 + 赞同数) × 10
 | 项目 | 固定约定 |
 |---|---|
 | 主接口 | `POST /api/v1/journey` |
+| 阶段偏好 | 可选字段 `stagePreference`：`default` / `fewer` / `more` |
+| 来源模式 | 可选字段 `retrieval`：`zhihu`（默认，绑定原帖）/ `model`（仅模型知识） |
 | 过渡文案 | `POST /api/v1/prelude`，可选；失败时前端保留默认等待文案 |
+| 首页热搜 | `GET /api/v1/hot`，可选；失败时前端隐藏轮播，不阻塞提问 |
 | 输入字段 | `query`，2—100 个字符 |
 | 阶段主键 | `stage-1`、`stage-2` 等稳定 ID |
 | 帖子关联 | `stages[].postIds` 引用 `posts[].id` |
 | 时间语义 | `editedAt` 是发布或编辑时间，不能直接当事件时间 |
 | 来源规则 | 页面只展示后端返回的知乎 HTTPS 链接 |
 | 密钥规则 | 仅存在 `.env.local` 或部署环境，不进入前端 |
-| 覆盖声明 | 当前只能返回 `fixture` 或 `sampled` |
+| 覆盖声明 | 当前只能返回 `sampled` 或 `model` |
 
 ## 验证
 
@@ -251,6 +266,12 @@ heat = ln(1 + 赞同数) × 10
 npm test
 node --check core.mjs
 node --check server.mjs
+```
+
+热搜接口自检：
+
+```powershell
+Invoke-RestMethod 'http://127.0.0.1:3000/api/v1/hot?limit=5' | ConvertTo-Json -Depth 5
 ```
 
 接口测试：
