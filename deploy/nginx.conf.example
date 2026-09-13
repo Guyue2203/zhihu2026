@@ -1,0 +1,73 @@
+# flow.guyue.me —— 反向代理配置
+#
+# 放置到 /etc/nginx/sites-available/flow.guyue.me，软链到 sites-enabled/，nginx -t 后 reload。
+#
+# 设计取舍：本项目由 Node 同时提供页面与接口（index.html、curation.html、图片、/api/*、
+# /auth/callback），且 CSP / X-Content-Type-Options / Referrer-Policy 都由应用统一下发。
+# 因此整站反代，不拆静态根目录 —— 拆了会丢安全响应头，/auth/callback 也不在 /api/ 前缀下，会直接 404。
+
+server {
+    listen 80;
+    server_name flow.guyue.me;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name flow.guyue.me;
+
+    # 与 ask.guyue.me 共用同一张证书。
+    # 前提：该证书覆盖 flow.guyue.me（通配符 *.guyue.me 即可）。核对：
+    #   openssl x509 -in /etc/nginx/ssl/.guyue.me/fullchain.pem -noout -text | grep -A1 "Subject Alternative Name"
+    ssl_certificate     /etc/nginx/ssl/.guyue.me/fullchain.pem;
+    ssl_certificate_key /etc/nginx/ssl/.guyue.me/cert.key;
+
+    ssl_session_cache shared:SSL:1m;
+    ssl_session_timeout 10m;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers on;
+
+    # 强制 HTTPS。故意不加 includeSubDomains：那会波及 guyue.me 下所有子域，
+    # 如果还有别的子域跑 HTTP 服务会被一起打断。
+    add_header Strict-Transport-Security "max-age=31536000" always;
+
+    # 首页 HTML 未压缩有 60KB 左右，gzip 后约 15KB，移动端访问差别明显。
+    # gzip_proxied 必须开，否则反代回来的响应不会被压缩。
+    gzip on;
+    gzip_proxied any;
+    gzip_min_length 1024;
+    gzip_comp_level 5;
+    gzip_types text/plain text/css application/javascript application/json image/svg+xml;
+
+    # 一次时间线生成要串行调用 DeepSeek 与知乎检索，实测约 15s。
+    # nginx 默认 proxy_read_timeout 是 60s，生成偏慢时会被截断成 504，这里放到 180s。
+    proxy_connect_timeout 10s;
+    proxy_send_timeout    180s;
+    proxy_read_timeout    180s;
+
+    location / {
+        proxy_pass http://127.0.0.1:3003;
+        proxy_http_version 1.1;
+
+        # 【最容易漏的一条】应用靠这个头决定 Cookie 是否加 Secure 标志。
+        # 必须写 $scheme：nginx 会用实际协议覆写客户端传来的同名头。
+        # 不要写成 $http_x_forwarded_proto，那等于把客户端输入直接透传，可被伪造。
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header Host              $host;
+
+        # 应用自身把请求体限制在 4KB，这里给个明确上限
+        client_max_body_size 64k;
+    }
+
+    # 本项目没有 websocket，不需要 Upgrade / Connection 头。
+    # 需要 HTTP/2（nginx ≥ 1.25.1）时在 server 段加：http2 on;
+    #
+    # 以后若要加访问口令：直接在上面那个 location / 里加两行即可（不要新建 location /，会重复）：
+    #     auth_basic "Private Area";
+    #     auth_basic_user_file /etc/nginx/htpasswd/.htpasswd-guyue;
+    # basic auth 与 OAuth 兼容：回调请求由浏览器发起，会自动带上已缓存的 basic 凭据，
+    # 不会像自定义 Cookie 门禁那样把 /auth/callback 一起拦掉导致授权码丢失。
+    # .htpasswd 可以直接复用你现有的那份。
+}
