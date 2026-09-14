@@ -348,6 +348,9 @@ Content-Type: application/json
 | `title` | 时间线标题 |
 | `thesis` | 认知转变主线 |
 | `stages` | 按时间或认知顺序排列的阶段 |
+| `startYear` / `endYear` | 阶段的结构化公历起止年份；持续至今时 `endYear` 为 `null` |
+| `ongoing` / `approximate` | 是否持续至今、时间边界是否为近似判断 |
+| `keywords` | 拼图块上展示的 2—3 个阶段关键词 |
 | `crawlerStatus` | `ok`、`empty`、`timeout`、`http_error`、`fallback_query`、`disabled` |
 | `crawlerQuery` | 本阶段实际送入知乎接口的首个 query |
 | `crawlHitCount` | 爬虫提取到的候选数量 |

@@ -239,10 +239,11 @@ const server = http.createServer(async (request, response) => {
     if (request.method === 'GET' && url.pathname === '/api/v1/hot') {
       const limit = Number(url.searchParams.get('limit')) || undefined;
       const refresh = ['1', 'true'].includes(url.searchParams.get('refresh'));
+      const result = await getHotList({ limit, refresh });
       const responseHeaders = headers('application/json; charset=utf-8');
       responseHeaders['Cache-Control'] = 'public, max-age=300';
       response.writeHead(200, responseHeaders);
-      return response.end(JSON.stringify(await getHotList({ limit, refresh })));
+      return response.end(JSON.stringify(result));
     }
     if (request.method === 'POST' && url.pathname === '/api/v1/prelude') {
       const { query, stagePreference, retrieval } = await readJson(request);
