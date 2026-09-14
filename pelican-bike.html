@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>鹈鹕骑自行车</title>
+  <style>
+    *{box-sizing:border-box}body{margin:0;display:grid;place-items:center;min-height:100vh;overflow:hidden;background:#eaf6ff}
+    svg{width:min(1000px,100vw);height:auto;display:block}
+    .wheel,.pedal{transform-box:fill-box;transform-origin:center;animation:spin 1s linear infinite}
+    .bird{transform-box:fill-box;transform-origin:center;animation:bob .5s ease-in-out infinite alternate}
+    .leg-a{transform-box:fill-box;transform-origin:top;animation:leg .5s ease-in-out infinite alternate}
+    .leg-b{transform-box:fill-box;transform-origin:top;animation:leg .5s ease-in-out infinite alternate-reverse}
+    .clouds{animation:drift 9s linear infinite}
+    .road{stroke-dasharray:55 35;animation:road .7s linear infinite}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    @keyframes bob{to{transform:translateY(-5px) rotate(-1deg)}}
+    @keyframes leg{to{transform:rotate(22deg)}}
+    @keyframes drift{to{transform:translateX(-900px)}}
+    @keyframes road{to{stroke-dashoffset:90}}
+    @media(prefers-reduced-motion:reduce){*{animation-play-state:paused!important}}
+  </style>
+</head>
+<body>
+<svg viewBox="0 0 1000 600" role="img" aria-labelledby="title desc">
+  <title id="title">鹈鹕骑自行车的二维动画</title>
+  <desc id="desc">一只白色鹈鹕在蓝天下骑着蓝色自行车，车轮、脚踏、道路和云朵持续运动。</desc>
+  <defs>
+    <linearGradient id="sky" x2="0" y2="1"><stop stop-color="#9bd8ff"/><stop offset="1" stop-color="#eefaff"/></linearGradient>
+  </defs>
+  <rect width="1000" height="600" fill="url(#sky)"/>
+  <g class="clouds" fill="#fff" opacity=".9">
+    <path d="M80 130c12-38 66-38 79 0 35-18 68 5 66 34H38c-2-27 20-43 42-34z"/>
+    <path d="M680 92c10-34 56-34 68 0 31-16 58 5 57 29H644c-1-23 17-37 36-29z"/>
+    <path d="M1050 150c12-38 66-38 79 0 35-18 68 5 66 34h-187c-2-27 20-43 42-34z"/>
+  </g>
+  <rect y="475" width="1000" height="125" fill="#cae58c"/>
+  <path class="road" d="M0 530H1000" stroke="#fff" stroke-width="9"/>
+
+  <g stroke="#12233f" stroke-width="8" fill="none">
+    <g class="wheel"><circle cx="330" cy="455" r="103"/><path d="M330 352v206M227 455h206M257 382l146 146M403 382L257 528" stroke-width="3"/></g>
+    <g class="wheel"><circle cx="700" cy="455" r="103"/><path d="M700 352v206M597 455h206M627 382l146 146M773 382L627 528" stroke-width="3"/></g>
+    <path d="M330 455l145-8 93-137 132 145-225-8 78-125H415l60 125" stroke="#1672e8" stroke-width="12" stroke-linejoin="round"/>
+    <path d="M556 308h57M700 455l-30-184h61M676 272h75" stroke-linecap="round"/>
+    <g class="pedal"><circle cx="475" cy="447" r="15" fill="#1672e8"/><path d="M475 447l45 23M475 447l-45-23"/></g>
+  </g>
+
+  <g class="bird">
+    <g class="leg-a"><path d="M478 337q4 67 42 133" stroke="#e89a35" stroke-width="15" fill="none" stroke-linecap="round"/><path d="M513 468l25 9" stroke="#e89a35" stroke-width="13" stroke-linecap="round"/></g>
+    <g class="leg-b"><path d="M519 338q-2 63-89 86" stroke="#f1ad45" stroke-width="15" fill="none" stroke-linecap="round"/><path d="M431 424l-24-7" stroke="#f1ad45" stroke-width="13" stroke-linecap="round"/></g>
+    <ellipse cx="500" cy="282" rx="91" ry="78" fill="#fff" stroke="#12233f" stroke-width="7"/>
+    <path d="M463 300q48 57 98 8-36-4-58-54z" fill="#d9e9f4" stroke="#12233f" stroke-width="6"/>
+    <path d="M441 256q-56 36-20 89 26-39 69-54" fill="#fff" stroke="#12233f" stroke-width="7" stroke-linejoin="round"/>
+    <path d="M421 337q-26 0-38-27" stroke="#12233f" stroke-width="8" fill="none" stroke-linecap="round"/>
+    <path d="M561 244q39-75 111-38-51 2-77 31" fill="#fff" stroke="#12233f" stroke-width="7"/>
+    <path d="M646 202L826 224 655 260q-22-20-9-58z" fill="#ffc94d" stroke="#12233f" stroke-width="7" stroke-linejoin="round"/>
+    <path d="M655 230q75 2 151-6-67 60-151 36z" fill="#f19a39" stroke="#12233f" stroke-width="6"/>
+    <circle cx="662" cy="213" r="8" fill="#12233f"/>
+    <path d="M552 216q-24-31-39-3" stroke="#12233f" stroke-width="7" fill="none" stroke-linecap="round"/>
+  </g>
+</svg>
+</body>
+</html>
