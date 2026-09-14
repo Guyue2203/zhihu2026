@@ -363,6 +363,10 @@ Content-Type: application/json
 | `title` | 时间线标题 |
 | `thesis` | 认知转变主线 |
 | `stages` | 按时间或认知顺序排列的阶段 |
+| `startYear` / `endYear` | 阶段的结构化公历起止年份；持续至今时 `endYear` 为 `null` |
+| `ongoing` / `approximate` | 是否持续至今、时间边界是否为近似判断 |
+| `keywords` | 拼图块上展示的 2—3 个阶段关键词 |
+| `importance` / `salience` / `reason` | 该阶段属于核心转折还是细节补充，以及它在规划骨架里的理由 |
 | `candidateStageCount` | 完整规划骨架的阶段数；可能大于最终展示数 |
 | `crawlerStatus` | `ok`、`empty`、`timeout`、`http_error`、`fallback_query`、`disabled` |
 | `crawlerQuery` | 本阶段实际送入知乎接口的首个 query |
