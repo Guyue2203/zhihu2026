@@ -320,7 +320,7 @@ ssh guyue@your-server 'sudo systemctl restart zhihu2026'
 | 回调 404 | nginx 只代理了 `/api/` | 改成整站反代 |
 | 生成时报 504 | `proxy_read_timeout` 太短 | 配置里已设 180s，确认没被覆盖 |
 | 热榜板块消失 | `hot_list` 每日额度只有 100，被耗尽 | 前端会自动隐藏、不影响提问；把 `HOT_CACHE_TTL_MS` 调到 `1800000` 可降到 48 次/天 |
-| 生成时报 `rate limit exceeded` | 知乎检索按**账号**限流，多访客共用同一个桶 | 见下方说明 |
+| 生成时报 `rate limit exceeded` | 知乎检索按**账号**限流，多访客共用同一个桶 | 默认先以 100ms 间隔做轻量错峰；仍触发时调高 `ZHIHU_SEARCH_INTERVAL_MS` |
 
 ---
 
@@ -328,7 +328,7 @@ ssh guyue@your-server 'sudo systemctl restart zhihu2026'
 
 1. **接口没有任何鉴权或限流。** `POST /api/v1/journey` 每次都会真实消耗知乎检索额度与 DeepSeek token。域名公开后任何人都能刷。想加口令时，在 nginx 的 `location /` 里加两行 `auth_basic` 即可（配置示例文件底部有说明），可复用你现有的 `.htpasswd-guyue`。
 
-2. **突发限流。** 一次生成会串行连发最多 8 次知乎搜索，且代码没有重试退避。多访客并发时会互相挤占同一个账号的限流额度，其中一方可能看到「这次没有顺利生成」。目前未修。
+2. **突发限流。** 一次生成仍会发起最多 8 次知乎搜索，但同一 Node 进程中的所有搜索现在共享节拍，默认至少间隔 100ms 启动，先以较小延迟避免请求在同一时刻发出。该改动暂不减少请求次数，也不重试已经被上游拒绝的请求；若仍触发限流，可逐步把 `.env.local` 中的 `ZHIHU_SEARCH_INTERVAL_MS` 调高到 `500`、`1000` 或更高后重启服务。
 
 额度自查（不会打印密钥）：
 

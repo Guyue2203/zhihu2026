@@ -78,6 +78,7 @@ Copy-Item .env.example .env.local
 | `ZHIHU_ACCESS_SECRET` | Live 必填 | 知乎开放平台 Bearer 凭证 | [知乎开放平台个人中心](https://developer.zhihu.com/profile) |
 | `ZHIHU_API_BASE_URL` | 是 | 知乎 API 根地址 | `https://developer.zhihu.com` |
 | `ZHIHU_SEARCH_COUNT` | 否 | 每次知乎搜索数量 | `10`，官方接口上限为 10 |
+| `ZHIHU_SEARCH_INTERVAL_MS` | 否 | 相邻知乎搜索的最小启动间隔 | 默认 `100`；同一进程内所有生成任务共用该节拍，设为 `0` 可停用 |
 | `ZHIHU_TIMEOUT_MS` | 否 | 知乎请求超时 | `30000` |
 | `JOURNEY_CACHE_TTL_MS` | 否 | Live 生成结果本地缓存有效期 | `604800000`（7 天）；设为 `0` 停用缓存 |
 | `DEEPSEEK_API_KEY` | Live 必填 | 时间线规划与总结 | DeepSeek 或队伍获得的兼容服务密钥 |
