@@ -300,7 +300,7 @@ export async function crawlStage(stage, { enabled = process.env.CRAWLER_ENABLED 
   const seedQuery = fallbackQueries[0];
   const url = new URL('https://www.zhihu.com/search'); url.searchParams.set('type', 'content'); url.searchParams.set('q', seedQuery);
   try {
-    const response = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; CiyishiBiYishi/0.1)' }, signal: AbortSignal.timeout(Number(process.env.CRAWLER_TIMEOUT_MS) || 8000) });
+    const response = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; CikeBishi/0.1)' }, signal: AbortSignal.timeout(Number(process.env.CRAWLER_TIMEOUT_MS) || 8000) });
     const html = await response.text();
     const candidates = extractZhihuCandidates(html, stage);
     const queryHints = candidates.map(item => item.queryHint);

@@ -1,4 +1,4 @@
-# 此一时，彼一时 —— systemd 服务单元（flow.guyue.me / 端口 3003）
+# 此刻彼时 —— systemd 服务单元（flow.guyue.me / 端口 3003）
 #
 # 安装：
 #   sudo cp deploy/zhihu2026.service /etc/systemd/system/
@@ -9,7 +9,7 @@
 # 安装前必须改下面三处：User / Group / WorkingDirectory。
 
 [Unit]
-Description=此一时，彼一时 (zhihu2026)
+Description=此刻彼时 (zhihu2026)
 Documentation=https://github.com/Guyue2203/zhihu2026
 After=network-online.target
 Wants=network-online.target
