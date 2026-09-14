@@ -19,7 +19,9 @@ const CONTENT_TYPES = new Set(['all', 'answer', 'article', 'zvideo', 'pin', 'que
 const SORT_FIELDS = new Set(['ts', 'like_count']);
 const SORT_ORDERS = new Set(['asc', 'desc']);
 
-const apiBase = () => (process.env.ZHIHU_API_BASE_URL || DEFAULT_BASE).replace(/\/$/, '');
+// 本地个人中心开发可把用户数据请求单独指向 mock；生产未配置时仍沿用统一 API 地址。
+const apiBase = () => (process.env.ZHIHU_USER_API_BASE_URL || process.env.ZHIHU_API_BASE_URL || DEFAULT_BASE).replace(/\/$/, '');
+const accessSecret = () => process.env.ZHIHU_USER_ACCESS_SECRET || process.env.ZHIHU_ACCESS_SECRET;
 
 function fail(message, status = 400, code = status >= 500 ? 'UPSTREAM_ERROR' : 'INPUT_INVALID') {
   const error = new Error(message); error.status = status; error.code = code; throw error;
@@ -121,7 +123,7 @@ function pageCacheKey(endpoint, params) {
 }
 
 async function callUserApi(endpoint, params, { uid, oauthToken, refresh = false }) {
-  const secret = process.env.ZHIHU_ACCESS_SECRET;
+  const secret = accessSecret();
   if (!secret) fail('缺少 ZHIHU_ACCESS_SECRET', 503, 'CONFIG_MISSING');
   if (!oauthToken) fail('没有可用的知乎授权，请重新登录', 401, 'AUTH_REQUIRED');
 

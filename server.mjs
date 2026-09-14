@@ -16,7 +16,7 @@ const port = Number(process.env.PORT) || 3000;
 const frontendOrigin = process.env.FRONTEND_ORIGIN || '';
 /**
  * OAuth 回调路径。必须与知乎开放平台登记的 redirect_uri 完全一致——
- * 当前登记的是 http://127.0.0.1:3000/auth/callback；旧路径保留为别名，避免历史配置失效。
+ * 正式环境使用 /auth/callback；旧路径保留为别名，避免历史配置失效。
  */
 const CALLBACK_PATHS = new Set(['/auth/callback', '/api/v1/auth/callback']);
 
