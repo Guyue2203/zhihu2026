@@ -7,6 +7,28 @@ import * as store from './db.mjs';
 
 const ZHIHU_URL = `${(process.env.ZHIHU_API_BASE_URL || 'https://developer.zhihu.com').replace(/\/$/, '')}/api/v1/content/zhihu_search`;
 const DEEPSEEK_URL = `${(process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com').replace(/\/$/, '')}/chat/completions`;
+const ZHIHU_SEARCH_INTERVAL_DEFAULT_MS = 100;
+let zhihuSearchGate = Promise.resolve();
+let zhihuSearchLastStartedAt = 0;
+
+function zhihuSearchIntervalMs() {
+  const raw = process.env.ZHIHU_SEARCH_INTERVAL_MS;
+  if (raw === undefined || raw === '') return ZHIHU_SEARCH_INTERVAL_DEFAULT_MS;
+  const value = Number(raw);
+  if (!Number.isFinite(value)) return ZHIHU_SEARCH_INTERVAL_DEFAULT_MS;
+  return Math.min(Math.max(Math.trunc(value), 0), 60000);
+}
+
+/** 同一进程内所有知乎搜索共享节拍，避免多个生成任务交错形成突发请求。 */
+async function waitForZhihuSearchSlot() {
+  const slot = zhihuSearchGate.then(async () => {
+    const waitMs = Math.max(0, zhihuSearchLastStartedAt + zhihuSearchIntervalMs() - Date.now());
+    if (waitMs > 0) await new Promise(resolve => setTimeout(resolve, waitMs));
+    zhihuSearchLastStartedAt = Date.now();
+  });
+  zhihuSearchGate = slot.catch(() => {});
+  await slot;
+}
 
 function fail(message, status = 400, code = status >= 500 ? 'UPSTREAM_ERROR' : 'INPUT_INVALID') { const error = new Error(message); error.status = status; error.code = code; throw error; }
 export function normalizeQuery(value) { if (typeof value !== 'string') fail('query 必须是字符串'); const query = value.trim(); if (query.length < 2 || query.length > 100) fail('query 长度必须为 2—100 个字符'); return query; }
@@ -187,6 +209,7 @@ export async function getHotList({ limit = Number(process.env.ZHIHU_HOT_LIMIT) |
 
 export async function searchZhihu(query, { stageId = null, count = Number(process.env.ZHIHU_SEARCH_COUNT) || 10 } = {}) {  const secret = process.env.ZHIHU_ACCESS_SECRET; if (!secret) fail('缺少 ZHIHU_ACCESS_SECRET', 503, 'CONFIG_MISSING');
   const url = new URL(ZHIHU_URL); url.searchParams.set('Query', normalizeQuery(query)); url.searchParams.set('Count', String(Math.min(Math.max(count, 1), 10)));
+  await waitForZhihuSearchSlot();
   let response; try { response = await fetch(url, { headers: { Authorization: `Bearer ${secret}`, 'X-Request-Timestamp': String(Math.floor(Date.now() / 1000)), 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(Number(process.env.ZHIHU_TIMEOUT_MS) || 30000) }); } catch (error) { fail(`知乎网络请求失败：${error.message}`, 502, 'ZHIHU_NETWORK_ERROR'); }
   const body = await response.json().catch(() => ({})); if (!response.ok || body.Code !== 0) fail(`知乎搜索失败：${body.Message || response.status}`, 502, 'ZHIHU_SEARCH_FAILED');
   const posts = (Array.isArray(body.Data?.Items) ? body.Data.Items : []).map(item => normalizePost(item, stageId)).filter(post => post?.id);
@@ -385,6 +408,20 @@ async function selfTest() {
   if (metadata.startYear !== 2014 || metadata.endYear !== 2016 || metadata.keywords.join(',') !== '资本,创新') throw new Error('stage metadata normalization failed');
   const ongoingMetadata = normalizeStageMetadata({ ongoing: true }, { startYear: 2021, endYear: 2024, approximate: false, keywords: ['场景'] });
   if (ongoingMetadata.startYear !== 2021 || ongoingMetadata.endYear !== null || ongoingMetadata.approximate !== false) throw new Error('ongoing stage metadata fallback failed');
+  // 搜索节拍：不减少请求次数，但并发调用也必须按统一间隔依次启动
+  const savedFetchForPacing = globalThis.fetch; const savedSearchSecret = process.env.ZHIHU_ACCESS_SECRET; const savedSearchInterval = process.env.ZHIHU_SEARCH_INTERVAL_MS;
+  const searchStarts = []; process.env.ZHIHU_ACCESS_SECRET = 'self-test-search-secret'; process.env.ZHIHU_SEARCH_INTERVAL_MS = '25';
+  zhihuSearchGate = Promise.resolve(); zhihuSearchLastStartedAt = 0;
+  globalThis.fetch = async () => { searchStarts.push(Date.now()); return { ok: true, status: 200, json: async () => ({ Code: 0, Data: { Items: [] } }) }; };
+  try {
+    await Promise.all([searchZhihu('节拍测试一'), searchZhihu('节拍测试二')]);
+    if (searchStarts.length !== 2 || searchStarts[1] - searchStarts[0] < 20) throw new Error('Zhihu search pacing failed');
+  } finally {
+    globalThis.fetch = savedFetchForPacing;
+    if (savedSearchSecret === undefined) delete process.env.ZHIHU_ACCESS_SECRET; else process.env.ZHIHU_ACCESS_SECRET = savedSearchSecret;
+    if (savedSearchInterval === undefined) delete process.env.ZHIHU_SEARCH_INTERVAL_MS; else process.env.ZHIHU_SEARCH_INTERVAL_MS = savedSearchInterval;
+    zhihuSearchGate = Promise.resolve(); zhihuSearchLastStartedAt = 0;
+  }
   // 缓存测试全部走临时数据库，不碰项目里的 .data/ 与 .cache/
   const dir = await mkdtemp(path.join(tmpdir(), 'zhihu-store-'));
   process.env.ZHIHU_DATA_DIR = dir; process.env.ZHIHU_DB_PATH = path.join(dir, 'test.db');
