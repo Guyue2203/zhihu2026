@@ -75,11 +75,11 @@ const workspace = await mkdtemp(path.join(tmpdir(), 'zhihu-e2e-'));
 const legacyJourneyDir = path.join(workspace, 'legacy-journey');
 await mkdir(legacyJourneyDir, { recursive: true });
 await writeFile(path.join(legacyJourneyDir, 'seed.json'), JSON.stringify({
-  version: 3, query: '共享单车为什么失败？', preference: 'default', source: 'zhihu',
+  version: 4, query: '共享单车为什么失败？', preference: 'default', source: 'zhihu',
   fetchedAt: Date.now(), fetchedAtIso: new Date().toISOString(),
   result: {
     query: '共享单车为什么失败？', title: '共享单车：从规模神话到单位经济性',
-    thesis: '预置缓存', stages: [{ id: 'stage-1', period: '2015—2017', startYear: 2015, endYear: 2017, ongoing: false, approximate: true, keywords: ['创新', '资本', '便利'], cognition: '被视为创新', change: '', evidence: '', postIds: [] }],
+    thesis: '预置缓存', candidateStageCount: 1, stages: [{ id: 'stage-1', period: '2015—2017', startYear: 2015, endYear: 2017, ongoing: false, approximate: true, keywords: ['创新', '资本', '便利'], importance: 'core', salience: 90, reason: '规模扩张与整合是主线转折', cognition: '被视为创新', change: '', evidence: '', postIds: [] }],
     posts: [], limitations: ['预置缓存'], coverage: 'sampled', evidenceCount: 0, selectedCount: 0,
   },
 }));
@@ -121,6 +121,21 @@ const get = (p, opts = {}) => fetch(base + p, { redirect: 'manual', headers: { c
 const post = (p, body, opts = {}) => fetch(base + p, { method: 'POST', redirect: 'manual', headers: { cookie: cookieHeader(), 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body), ...opts });
 
 try {
+  /* 0. 输入准入不依赖登录，明显算式不得进入时间线生成 */
+  const arithmeticGate = await post('/api/v1/preflight', { query: '1+1=2' });
+  equal('算式预检返回 200', arithmeticGate.status, 200);
+  const arithmeticGateBody = await arithmeticGate.json();
+  equal('算式被拒绝', arithmeticGateBody.status, 'reject');
+  equal('算式分类正确', arithmeticGateBody.category, 'calculation');
+  const arithmeticJourney = await post('/api/v1/journey', { query: '1+1=2' });
+  equal('算式不能绕过预检直调时间线', arithmeticJourney.status, 422);
+  equal('直调拒绝码正确', (await arithmeticJourney.json()).code, 'QUERY_NOT_ELIGIBLE');
+  const missingStatic = await get('/static/journeys/not-built.json');
+  equal('未构建的静态时间线返回 404', missingStatic.status, 404);
+  equal('静态时间线 404 错误码', (await missingStatic.json()).code, 'NOT_FOUND');
+  const unsafeStatic = await get('/static/journeys/../README.md');
+  equal('静态路径不接受目录穿越', unsafeStatic.status, 404);
+
   /* 1. 未登录状态 */
   const meAnon = await get('/api/v1/me'); absorb(meAnon);
   const anonBody = await meAnon.json();

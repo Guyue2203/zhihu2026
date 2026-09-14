@@ -65,7 +65,7 @@ async function main() {
   equal('WAL 已开启', String(db.prepare('PRAGMA journal_mode').get().journal_mode).toLowerCase(), 'wal');
   equal('外键约束已开启', Number(db.prepare('PRAGMA foreign_keys').get().foreign_keys), 1);
   const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all().map(row => row.name);
-  for (const table of ['journey_cache', 'hot_cache', 'users', 'sessions', 'oauth_states', 'journey_history', 'user_api_cache']) {
+  for (const table of ['journey_cache', 'hot_cache', 'users', 'sessions', 'oauth_states', 'journey_history', 'user_api_cache', 'journey_records']) {
     check(`表 ${table} 已建立`, tables.includes(table));
   }
   store.getDb();
@@ -155,6 +155,13 @@ async function main() {
   equal('超期未命中', store.readJourneyCache('ck', { version: 2, ttlMs: 1000 }), null);
   store.writeJourneyCache({ cacheKey: 'ck', query: 'q', preference: 'default', source: 'zhihu', version: 2, result: { title: 'updated' } });
   equal('同键覆写而非新增', store.getDb().prepare('SELECT COUNT(*) AS n FROM journey_cache WHERE cache_key = ?').get('ck').n, 1);
+
+  const recordId = store.appendJourneyRecord({ cacheKey: 'ck', query: 'q', preference: 'default', source: 'zhihu', version: 3, payload: { journey: { title: '永久记录' }, plan: { stages: [] }, candidates: [] } });
+  equal('永久记录写入', store.countJourneyRecords(), 1);
+  equal('永久记录可读回', store.getJourneyRecord(recordId)?.payload?.journey?.title, '永久记录');
+  check('永久记录带 ISO 时间', /^\d{4}-\d{2}-\d{2}T/.test(store.getJourneyRecord(recordId)?.createdAtIso || ''));
+  store.pruneJourneyCache({ ttlMs: 1, keep: 0 });
+  equal('清理缓存不删除永久记录', store.countJourneyRecords(), 1);
 
   store.writeHotCache({ bucket: 20, version: 2, items: [{ title: '热搜' }] });
   equal('热搜缓存命中', store.readHotCache(20, { version: 2, ttlMs: 1000 })?.items[0].title, '热搜');

@@ -2,17 +2,17 @@
 
 ## 项目状态
 
-**此一时，彼一时**是一款时间型知识阅读工具。它基于一个判断：问题的答案不是固定的，同一个问题在不同时空会得到不同解答。用户输入一个问题，系统先规划待验证的认知阶段，再为每个阶段发现检索线索，通过知乎官方接口定位帖子，最终生成可追溯的认知变化时间线。
+**此一时，彼一时**是一款时间型知识阅读工具。它追踪的不是事实年表，而是知乎语境中“一个问题的答案怎样失效、转向或被重写”。输入先经过语义准入；合格问题由模型规划完整认知骨架，再以帖子验证，最终生成可追溯的认知变化时间线。
 
 当前链路：
 
 ```text
 query
-→ DeepSeek 规划 3—4 个待验证阶段
-→ 本地轻量爬虫提取候选标题与 query hint
-→ 知乎官方接口分阶段精准检索
-→ 按 ContentID 去重、按热度辅助排序
-→ DeepSeek 依据已验证帖子整理阶段变化
+→ 语义准入：接受 / 要求选择方向 / 拒绝
+├─ Live：DeepSeek 规划 2—8 个 core/detail 阶段 → 轻量爬虫发现 query hint
+│        → 知乎官方接口检索/去重/排序 → DeepSeek 依据帖子整理
+└─ Static：外部浏览器按时间严格检索 → 人工核验元数据
+          → 离线硬筛选/推荐排序 → 预生成静态 JSON
 → 前端展示时间线、帖子和局限
 ```
 
@@ -27,12 +27,14 @@ query
 ├── .data/              # SQLite 数据库，运行时生成，不提交
 ├── .cache/             # 改造前的 JSON 缓存；首次启动自动导入 SQLite，之后不再写入
 ├── .gitignore
-├── db.mjs              # SQLite 持久层：建表迁移、缓存、用户、会话、检索历史
+├── db.mjs              # SQLite：缓存、永久时间线记录、用户、会话、检索历史
 ├── oauth.mjs           # 知乎 OAuth：state 校验、换取 token、用户信息、会话 Cookie
 ├── core.mjs            # DS、爬虫、知乎检索、校验、总流程
 ├── server.mjs          # HTTP 服务、路由与认证
 ├── index.html          # 输入、等待态、时间线、帖子和登录控件
-├── curation.html       # 策展交互原型（硬编码案例，待绑定原帖）
+├── curation.html       # 静态策展页；优先读取构建产物，无产物时显示待核验样稿
+├── offline-pool.mjs    # 外部搜索页预选、硬校验、推荐排序、静态 JSON 构建
+├── static/             # 离线策展说明与构建后的 journeys/*.json
 ├── zhihu-logo.png      # 粒子背景采样用的知乎 logo
 ├── test.mjs            # 持久层与 OAuth 自检（mock，不访问外网）
 ├── e2e.mjs             # 端到端：mock OAuth + 独立实例，覆盖登录全链路
@@ -308,6 +310,17 @@ GET /api/v1/health
 - 未配置 OAuth 时登录按钮隐藏，`oauthConfigured` 为 `false`，主流程不受影响。
 - 登录用户的每次成功检索（含缓存命中）都会写入 `journey_history`；未登录不写历史。
 
+### 输入语义准入
+
+```http
+POST /api/v1/preflight
+Content-Type: application/json
+
+{"query":"人工智能怎么样"}
+```
+
+返回 `accept`、`clarify` 或 `reject`。算式、固定客观事实、学科通史不会进入认知时间线；宽泛问题返回最多三个固定结构的查询方向，前端让用户选择后再生成。主接口会重复执行同一校验，不能通过跳过前端绕开。
+
 ### 生成认知时间线
 
 ```http
@@ -327,9 +340,11 @@ Content-Type: application/json
 
 | 值 | 含义 |
 |---|---|
-| `default`（缺省同此） | 约 3 个阶段，模型按问题复杂度调整 |
-| `fewer` | 在保持认知变化完整的前提下适当减少阶段数量 |
-| `more` | 当确实存在认知转折时适当增加阶段数量（上限 6 个） |
+| `default`（缺省同此） | 目标 4 个阶段 |
+| `fewer` | 目标 3 个阶段 |
+| `more` | 目标 6 个阶段 |
+
+模型始终先规划完整的 2—8 阶段骨架并标注 `importance: core/detail`。偏好只决定保留多少 `detail`；所有 `core` 都强制保留，因此巨大转折多于目标值时，结果可以超过该档位。
 
 `retrieval` 可选，控制信息来源，只接受两个值：
 
@@ -351,6 +366,8 @@ Content-Type: application/json
 | `startYear` / `endYear` | 阶段的结构化公历起止年份；持续至今时 `endYear` 为 `null` |
 | `ongoing` / `approximate` | 是否持续至今、时间边界是否为近似判断 |
 | `keywords` | 拼图块上展示的 2—3 个阶段关键词 |
+| `importance` / `salience` / `reason` | 该阶段属于核心转折还是细节补充，以及它在规划骨架里的理由 |
+| `candidateStageCount` | 完整规划骨架的阶段数；可能大于最终展示数 |
 | `crawlerStatus` | `ok`、`empty`、`timeout`、`http_error`、`fallback_query`、`disabled` |
 | `crawlerQuery` | 本阶段实际送入知乎接口的首个 query |
 | `crawlHitCount` | 爬虫提取到的候选数量 |
@@ -359,6 +376,7 @@ Content-Type: application/json
 | `posts` | 经过知乎接口确认的帖子 |
 | `coverage` | `sampled` 或 `model`（未启用知乎检索） |
 | `limitations` | 本次结果的证据边界 |
+| `recordId` | 本次新生成结果的永久本地记录 ID；缓存命中沿用原值 |
 
 ### 知乎热搜
 
@@ -395,13 +413,14 @@ Content-Type: application/json
 
 ## 数据存储（SQLite）
 
-时间线缓存、热搜缓存、知乎用户、登录会话与检索历史统一存放在 SQLite 中，默认文件为 `.data/zhihu.db`（已被 `.gitignore` 忽略）。使用 Node 内置 `node:sqlite`，**不引入任何第三方依赖**；数据库以 WAL 模式运行，`PRAGMA foreign_keys = ON`，并设置 5 秒 busy timeout。
+时间线缓存、永久生成快照、热搜缓存、知乎用户、登录会话与检索历史统一存放在 SQLite 中，默认文件为 `.data/zhihu.db`（已被 `.gitignore` 忽略）。使用 Node 内置 `node:sqlite`，**不引入任何第三方依赖**；数据库以 WAL 模式运行，`PRAGMA foreign_keys = ON`，并设置 5 秒 busy timeout。
 
 ### 表结构
 
 | 表 | 主键 | 用途 |
 |---|---|---|
 | `journey_cache` | `cache_key` | 生成结果缓存；`payload` 为完整结果 JSON，与接口响应同一契约 |
+| `journey_records` | `id` | 每次成功生成的永久快照，含完整规划、候选池与成品；只追加，不参与 TTL 清理 |
 | `hot_cache` | `bucket` | 热搜缓存，`bucket` 为归并后的条数档位（10/20/30） |
 | `users` | `uid` | 知乎授权用户；`uid` 按十进制字符串存储 |
 | `sessions` | `sid` | 应用会话；`oauth_token` 只存在于此，不下发浏览器 |
@@ -416,11 +435,12 @@ Content-Type: application/json
 - 缓存键为「规范化后的 query + 阶段偏好 + 来源模式」的 sha256（三者全量参与，`default` / `zhihu` 不再省略）。
 - 命中时直接返回完整结果，不再调用 DeepSeek、爬虫或知乎接口，也不要求任何密钥存在；实测命中约 25 ms，回源约 15 s。
 - `JOURNEY_CACHE_TTL_MS` 控制有效期，默认 7 天；设为 `0` 停用缓存读写。
-- `schema_version` 记录写入时的结果契约版本。当前为 `2`（总结输入不再含爬虫诊断字段）；版本不符按未命中处理并自动重建，因此升级后首次请求会重新回源一次。
+- `schema_version` 记录写入时的结果契约版本。当前为 `3`（阶段带 `core/detail`，总结不得改写规划骨架）；版本不符按未命中处理并自动重建，因此升级后首次请求会重新回源一次。
 - 热搜缓存由 `HOT_CACHE_TTL_MS` 控制，默认 10 分钟，同样使用版本号失效。
 - **缓存读写失败一律静默降级**：数据库异常不会让真实请求失败，只是每次都回源。生成失败不写缓存，下次请求自动重试完整链路。
 - `POST /api/v1/journey?refresh=1` 强制绕过缓存重新生成并更新缓存。
 - 启动时会清理超过 TTL 的缓存行，并把 `journey_cache` 控制在最近 500 条，避免演示机长期运行后无限增长。
+- 上述清理只作用于加速缓存。每次真正生成都会先追加写入 `journey_records`；7 天后缓存可失效，但历史生成数据仍保留。
 
 ### 用户数据接口缓存
 
@@ -512,7 +532,18 @@ ZHIHU_OAUTH_REDIRECT_URI=http://127.0.0.1:3000/auth/callback
 
 > 说明：以上结论来自对当前 key 的实测（请求体、`usage.completion_tokens_details.reasoning_tokens` 与 `finish_reason`），不是按文档推断。输出**质量**差异未做评测，如需在 `deepseek-flash` 与 `deepseek-v4-pro` 之间取舍，应在本项目「评测方法」一节列出的 10 个固定问题上做 A/B。
 
-## 当前爬虫如何工作
+## 离线外部检索与静态演示
+
+`offline-pool.mjs` 实现比赛演示采用的非实时路径：外部浏览器按阶段和日期严格检索并保存 HTML，程序从中建立预选池，再与人工核验的帖子元数据求交集。规范知乎回答链接、`verified: true`、阶段日期范围和最低相关度是硬门槛；之后按“相关度 55% + 对数热度 30% + 外部排名 15%”计算推荐分，并先取不同 `stance` 的最高分以防单一叙事垄断。
+
+```powershell
+node offline-pool.mjs path\to\manifest.json
+# 默认输出 static/journeys/<slug>.json
+```
+
+manifest 格式和浏览器导出步骤见 [`static/README.md`](static/README.md)。任一阶段没有合格帖子时构建直接失败，不生成假数据。`curation.html?journey=<slug>#results` 会读取对应的 `/static/journeys/<slug>.json`（缺省 `bike`）；文件不存在时保留并明确标注当前策展占位稿。该路径不在用户访问时启动浏览器、爬虫或模型。
+
+## Live 轻量爬虫如何工作
 
 `crawlStage(stage)` 是本地轻量爬虫，不使用第三方包：
 
@@ -545,6 +576,7 @@ heat = ln(1 + 赞同数) × 10
 | 项目 | 固定约定 |
 |---|---|
 | 主接口 | `POST /api/v1/journey` |
+| 语义准入 | `POST /api/v1/preflight`；主接口也强制复验 |
 | 阶段偏好 | 可选字段 `stagePreference`：`default` / `fewer` / `more` |
 | 来源模式 | 可选字段 `retrieval`：`zhihu`（默认，绑定原帖）/ `model`（仅模型知识） |
 | 过渡文案 | `POST /api/v1/prelude`，可选；失败时前端保留默认等待文案 |
@@ -561,7 +593,7 @@ heat = ln(1 + 赞同数) × 10
 | 用户主键 | `uid` 是无损字符串，前端不得转成 Number |
 | 检索历史 | `GET /api/v1/me/history`；未登录返回 `401 AUTH_REQUIRED` |
 | 创作与关注 | `GET /api/v1/me/contents`、`GET /api/v1/me/followees`；分页一律用服务端返回的 `NextOffset` 原样回传 |
-| 覆盖声明 | 当前只能返回 `sampled` 或 `model` |
+| 覆盖声明 | Live API 返回 `sampled` 或 `model`；离线构建产物为 `curated_static` |
 
 ## 验证
 
@@ -569,6 +601,7 @@ heat = ln(1 + 赞同数) × 10
 npm test           # 自检 + 持久层/OAuth 单测 + 端到端，全程不访问外网
 npm run test:unit  # 只跑自检与单测
 npm run test:e2e   # 只跑端到端（自行取空闲端口，起一个临时实例）
+node offline-pool.mjs --self-test  # 离线提取、硬校验、排序与立场多样性
 ```
 
 语法检查：
@@ -578,15 +611,17 @@ node --check core.mjs
 node --check server.mjs
 node --check db.mjs
 node --check oauth.mjs
+node --check offline-pool.mjs
 ```
 
 覆盖范围：
 
 | 命令 | 覆盖 |
 |---|---|
-| `node core.mjs --self-test` | 缓存往返、键/偏好/来源隔离、schema 版本失效、TTL 过期与停用、爬虫候选提取、prelude 回退 |
-| `node test.mjs` | 建表迁移、WAL 与外键、无损 uid、用户 upsert、会话生命周期与过期清理、state 四类拒绝分支、检索历史与级联删除、缓存版本与 TTL、旧 JSON 导入及其回归、OAuth mock 端到端、Cookie 属性 |
-| `node e2e.mjs` | mock OAuth + 独立实例：登录跳转、伪造/缺失/重放 state 拒绝、回调建会话、Cookie 属性、`/me` 字段与凭证不泄露、检索写历史、退出、CSP |
+| `node core.mjs --self-test` | 语义准入、核心节点保留、缓存隔离与失效、爬虫候选提取、prelude 回退 |
+| `node offline-pool.mjs --self-test` | 外部结果链接提取、日期/来源硬校验、推荐排序、立场多样性 |
+| `node test.mjs` | 建表迁移、永久记录不受缓存清理、WAL 与外键、用户/会话、OAuth state、历史、缓存与旧 JSON 导入 |
+| `node e2e.mjs` | 输入拒绝、静态路由、mock OAuth 登录全链路、用户数据接口、检索历史、退出、CSP |
 
 热搜接口自检：
 

@@ -132,6 +132,24 @@ const MIGRATIONS = [
       CREATE INDEX idx_user_api_cache_uid ON user_api_cache (uid);
     `);
   },
+  function permanentJourneyRecords(db) {
+    db.exec(`
+      -- 永久时间线快照；与可删除的 journey_cache 分离，不参与 TTL 或条数清理。
+      CREATE TABLE journey_records (
+        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+        cache_key      TEXT NOT NULL,
+        query          TEXT NOT NULL,
+        preference     TEXT NOT NULL,
+        source         TEXT NOT NULL,
+        schema_version INTEGER NOT NULL,
+        payload        TEXT NOT NULL,
+        created_at     INTEGER NOT NULL,
+        created_at_iso TEXT NOT NULL
+      );
+      CREATE INDEX idx_journey_records_query_created_at ON journey_records (query, created_at DESC);
+      CREATE INDEX idx_journey_records_cache_key ON journey_records (cache_key);
+    `);
+  },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;
@@ -209,6 +227,31 @@ export function pruneJourneyCache({ ttlMs, keep = 500 }) {
   db.prepare(`DELETE FROM journey_cache WHERE cache_key IN (
       SELECT cache_key FROM journey_cache ORDER BY fetched_at DESC LIMIT -1 OFFSET ?
     )`).run(keep);
+}
+
+/* -------------------------------------------------------------- 永久时间线记录 */
+
+export function appendJourneyRecord({ cacheKey, query, preference, source, version, payload }) {
+  const now = Date.now();
+  const inserted = run(`INSERT INTO journey_records (cache_key, query, preference, source, schema_version, payload, created_at, created_at_iso)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    cacheKey, query, preference, source, version, JSON.stringify(payload), now, new Date(now).toISOString());
+  return Number(inserted.lastInsertRowid);
+}
+
+export function getJourneyRecord(id) {
+  const row = one(`SELECT id, query, preference, source, schema_version, payload, created_at, created_at_iso
+                   FROM journey_records WHERE id = ?`, id);
+  if (!row) return null;
+  return {
+    id: Number(row.id), query: row.query, preference: row.preference, source: row.source,
+    schemaVersion: Number(row.schema_version), payload: JSON.parse(row.payload),
+    createdAt: Number(row.created_at), createdAtIso: row.created_at_iso,
+  };
+}
+
+export function countJourneyRecords() {
+  return Number(one('SELECT COUNT(*) AS n FROM journey_records').n);
 }
 
 /* ------------------------------------------------------------------ 热搜缓存 */

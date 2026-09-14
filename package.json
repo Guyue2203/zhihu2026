@@ -9,8 +9,9 @@
     "start": "node --watch --env-file=.env.local server.mjs",
     "dev:auth": "node --env-file=.env.local dev-auth.mjs",
     "start:prod": "node --env-file=.env.local server.mjs",
-    "test": "node core.mjs --self-test && node test.mjs && node e2e.mjs",
-    "test:unit": "node core.mjs --self-test && node test.mjs",
+    "build:static": "node offline-pool.mjs",
+    "test": "node core.mjs --self-test && node offline-pool.mjs --self-test && node test.mjs && node e2e.mjs",
+    "test:unit": "node core.mjs --self-test && node offline-pool.mjs --self-test && node test.mjs",
     "test:e2e": "node e2e.mjs"
   }
 }

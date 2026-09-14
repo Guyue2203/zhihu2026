@@ -2,7 +2,7 @@ import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { buildJourney, buildPrelude, getHotList, initStore } from './core.mjs';
+import { buildJourney, buildPrelude, classifyQuery, getHotList, initStore } from './core.mjs';
 import * as oauth from './oauth.mjs';
 import * as store from './db.mjs';
 import * as zhihuUser from './zhihu-user.mjs';
@@ -28,6 +28,12 @@ const headers = type => ({
   // img-src 额外放行知乎头像 CDN（*.zhimg.com），其余来源仍只允许自身
   'Content-Security-Policy': "default-src 'self'; style-src 'self' 'unsafe-inline' https://unpkg.zhimg.com; script-src 'self' 'unsafe-inline'; connect-src 'self'; font-src 'self' https://unpkg.zhimg.com; img-src 'self' https://*.zhimg.com data:; frame-ancestors 'none'; base-uri 'none'",
 });
+
+async function sendFile(response, name, type, cacheControl = 'no-store') {
+  const body = await readPage(name);
+  response.writeHead(200, { ...headers(type), 'Cache-Control': cacheControl });
+  response.end(body);
+}
 
 /** 追加而非覆盖 Set-Cookie，登录回调可能同时下发浏览器标识与会话标识。 */
 function setCookie(response, cookie) {
@@ -123,28 +129,31 @@ const server = http.createServer(async (request, response) => {
       return response.end();
     }
     if (request.method === 'GET' && url.pathname === '/') {
-      response.writeHead(200, headers('text/html; charset=utf-8'));
-      return response.end(await readPage('index.html'));
+      return sendFile(response, 'index.html', 'text/html; charset=utf-8');
     }
     if (request.method === 'GET' && url.pathname === '/curation.html') {
-      response.writeHead(200, headers('text/html; charset=utf-8'));
-      return response.end(await readPage('curation.html'));
+      return sendFile(response, 'curation.html', 'text/html; charset=utf-8');
+    }
+    if (request.method === 'GET' && /^\/static\/journeys\/[a-z0-9-]+\.json$/.test(url.pathname)) {
+      try {
+        const body = await readPage(url.pathname.slice(1));
+        const responseHeaders = headers('application/json; charset=utf-8');
+        responseHeaders['Cache-Control'] = 'public, max-age=300';
+        response.writeHead(200, responseHeaders);
+        return response.end(body);
+      } catch (error) {
+        if (error.code === 'ENOENT') return json(request, response, 404, { error: '静态时间线不存在', code: 'NOT_FOUND' });
+        throw error;
+      }
     }
     if (request.method === 'GET' && url.pathname === '/zhihu-logo.png') {
-      response.writeHead(200, headers('image/png'));
-      return response.end(await readPage('zhihu-logo.png'));
+      return sendFile(response, 'zhihu-logo.png', 'image/png');
     }
     if (request.method === 'GET' && url.pathname === '/assets/brand/logo-mark.png') {
-      const responseHeaders = headers('image/png');
-      responseHeaders['Cache-Control'] = 'public, max-age=86400';
-      response.writeHead(200, responseHeaders);
-      return response.end(await readPage('assets/brand/logo-mark.png'));
+      return sendFile(response, 'assets/brand/logo-mark.png', 'image/png', 'public, max-age=86400');
     }
     if (request.method === 'GET' && url.pathname === '/assets/brand/logo-mark.svg') {
-      const responseHeaders = headers('image/svg+xml; charset=utf-8');
-      responseHeaders['Cache-Control'] = 'public, max-age=86400';
-      response.writeHead(200, responseHeaders);
-      return response.end(await readPage('assets/brand/logo-mark.svg'));
+      return sendFile(response, 'assets/brand/logo-mark.svg', 'image/svg+xml; charset=utf-8', 'public, max-age=86400');
     }
     if (request.method === 'GET' && url.pathname === '/api/v1/health') return json(request, response, 200, {
       status: 'ok',
@@ -244,6 +253,10 @@ const server = http.createServer(async (request, response) => {
       responseHeaders['Cache-Control'] = 'public, max-age=300';
       response.writeHead(200, responseHeaders);
       return response.end(JSON.stringify(result));
+    }
+    if (request.method === 'POST' && url.pathname === '/api/v1/preflight') {
+      const { query } = await readJson(request);
+      return json(request, response, 200, await classifyQuery(query));
     }
     if (request.method === 'POST' && url.pathname === '/api/v1/prelude') {
       const { query, stagePreference, retrieval } = await readJson(request);
