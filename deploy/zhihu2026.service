@@ -1,0 +1,52 @@
+# 此一时，彼一时 —— systemd 服务单元（flow.guyue.me / 端口 3003）
+#
+# 安装：
+#   sudo cp deploy/zhihu2026.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now zhihu2026
+#   sudo journalctl -u zhihu2026 -f
+#
+# 安装前必须改下面三处：User / Group / WorkingDirectory。
+
+[Unit]
+Description=此一时，彼一时 (zhihu2026)
+Documentation=https://github.com/Guyue2203/zhihu2026
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+
+# 用「拥有项目文件的那个用户」运行，不要用 www-data。
+# 原因：.env.local 权限是 600（含 App Key 与 Access Secret），运行用户不一致会直接读不到、启动失败。
+# 查看当前用户：id -un / id -gn
+User=guyue
+Group=guyue
+
+WorkingDirectory=/var/guyue/flow.guyue.me
+
+# 生产不要用 --watch（开发特性，文件变动会重启进程）。
+# 端口由 .env.local 里的 PORT=3003 决定，nginx 反代到 127.0.0.1:3003。
+# node 必须是系统路径（which node）。写成 nvm 的路径会因取不到登录 shell 环境而报 203/EXEC。
+ExecStart=/usr/bin/node --env-file=.env.local server.mjs
+
+Restart=always
+RestartSec=3
+# 收到 SIGTERM 后给正在生成的请求一点收尾时间（一次生成约 15s）
+KillSignal=SIGTERM
+TimeoutStopSec=20
+
+# ---- 加固 ----
+# 应用只需要写 .data/（SQLite 及其 WAL 文件），其余文件系统保持只读。
+# 开 ProtectSystem=strict 后 .data/ 必须**提前建好**，否则应用无权创建它。
+# 路径前缀的 - 表示该目录不存在时忽略而不报错。
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=-/var/guyue/flow.guyue.me/.data
+# 环境变量里的密钥不随 core dump 泄漏
+LimitCORE=0
+
+[Install]
+WantedBy=multi-user.target

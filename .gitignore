@@ -1,0 +1,12 @@
+.env
+.env.*
+!.env.example
+.cache/
+# SQLite 数据库及其 WAL/SHM 附属文件：运行时生成，含登录会话与 OAuth token，绝不提交
+.data/
+*.db
+*.db-wal
+*.db-shm
+node_modules/
+*.log
+.DS_Store
