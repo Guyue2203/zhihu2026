@@ -38,6 +38,7 @@ query
 ├── zhihu-logo.png      # 粒子背景采样用的知乎 logo
 ├── test.mjs            # 持久层与 OAuth 自检（mock，不访问外网）
 ├── e2e.mjs             # 端到端：mock OAuth + 独立实例，覆盖登录全链路
+├── dev-auth.mjs        # 本地个人中心开发：交互式 mock OAuth 与用户数据
 ├── deploy/             # 部署模板：nginx 反代配置与 systemd 服务单元
 ├── package.json
 ├── README.md           # 运行、接口和验证说明
@@ -72,6 +73,7 @@ Copy-Item .env.example .env.local
 | 变量 | 必填 | 作用 | 建议值或来源 |
 |---|---:|---|---|
 | `PORT` | 否 | 本地服务端口 | 默认 `3000`；改动后 `ZHIHU_OAUTH_REDIRECT_URI` 的端口要同步 |
+| `DEV_AUTH_PORT` | 否 | 本地模拟登录服务端口 | 默认 `3000`；仅 `npm run dev:auth` 使用 |
 | `FRONTEND_ORIGIN` | 否 | 前后端分离部署时的前端源，用于放开 CORS | 留空表示仅同源，且不返回任何 CORS 头 |
 | `ZHIHU_ACCESS_SECRET` | Live 必填 | 知乎开放平台 Bearer 凭证 | [知乎开放平台个人中心](https://developer.zhihu.com/profile) |
 | `ZHIHU_API_BASE_URL` | 是 | 知乎 API 根地址 | `https://developer.zhihu.com` |
@@ -127,6 +129,26 @@ npm start
 打开 [http://127.0.0.1:3000/](http://127.0.0.1:3000/)。
 
 若知乎返回 `Authorization failed`，表示 `ZHIHU_ACCESS_SECRET` 无效、过期或权限未开通，代码无法绕过官方鉴权。
+
+### 个人中心本地开发
+
+真实知乎 OAuth 只能回调已登记的公网 HTTPS 地址。线上登记为 `https://flow.guyue.me/auth/callback` 后，`127.0.0.1` 无法共享线上 Cookie 和 OAuth state，这是正常的浏览器安全边界。
+
+开发个人中心时运行：
+
+```bash
+npm run dev:auth
+```
+
+然后打开 [http://127.0.0.1:3000/](http://127.0.0.1:3000/)，点击「登录知乎」。该命令会在本机回环地址启动模拟 OAuth 和用户数据接口，提供模拟资料、关注列表、创作列表与分页；检索历史写入独立的 `.data/dev-auth.db`。它不会调用真实知乎登录，也不会读取或复制服务器上的会话数据库。
+
+如果本机 3000 端口已占用，可在 `.env.local` 中设置 `DEV_AUTH_PORT=3003`。这个变量只影响 `npm run dev:auth`，不改变生产服务的 `PORT`。正常开发和生产命令的行为保持不变：
+
+- `npm start`：按 `.env.local` 启动普通本地实例，不模拟登录。
+- `npm run dev:auth`：仅本机模拟登录，用于个人中心开发。
+- `npm run start:prod`：生产启动，不加载任何模拟服务。
+
+真实 OAuth、真实用户数据和 Cookie 安全属性仍需在 `https://flow.guyue.me` 做最终验收。不要把服务器的 `.data/zhihu.db` 下载到本机，其中包含有效会话与 OAuth Token。
 
 ## 部署到服务器
 
