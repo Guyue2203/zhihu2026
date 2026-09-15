@@ -7,6 +7,14 @@
 3. 运行 `node offline-pool.mjs manifest.json`。程序只接纳同时满足以下条件的帖子：出现在已保存的外部搜索页、是规范知乎回答链接、`verified: true`、发布时间位于阶段边界、内容与阶段相关。
 4. 结果写入 `static/journeys/<slug>.json`；推荐分由相关度 55%、热度 30%、外部搜索排名 15% 组成，并优先保留不同立场。
 
+只检查一次 HTML 是否能被解析，不生成时间线：
+
+```powershell
+node offline-pool.mjs --inspect captures\bike-smoke\search-results.html captures\bike-smoke\candidates.json
+```
+
+解析器接受知乎中文回答路径 `/question/<问题ID>/answer/<回答ID>` 和知乎官方英文镜像路径 `/en/answer/<回答ID>`；其它页面会被拒绝。
+
 最小 manifest 结构：
 
 ```json

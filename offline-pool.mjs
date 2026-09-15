@@ -2,12 +2,14 @@
  * 离线策展构建器：读取外部浏览器保存的搜索结果 HTML，以人工核验元数据补全帖子，
  * 再按相关度、热度、外部搜索排名与立场多样性生成可审核的静态 JSON。
  * 运行：node offline-pool.mjs <manifest.json> [output.json]
+ * 检查 HTML：node offline-pool.mjs --inspect <capture.html> [output.json]
  */
 import path from 'node:path';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
 const ANSWER_PATH = /^\/question\/(\d+)\/answer\/(\d+)\/?$/;
+const EN_ANSWER_PATH = /^\/en\/answer\/(\d+)\/?$/;
 const DAY = 86400000;
 
 const clamp01 = value => Math.min(1, Math.max(0, Number(value) || 0));
@@ -16,7 +18,7 @@ const decodeHtml = value => String(value || '')
   .replace(/&amp;/gi, '&').replace(/&quot;/gi, '"').replace(/&#39;|&apos;/gi, "'")
   .replace(/&lt;/gi, '<').replace(/&gt;/gi, '>').replace(/&#x2F;/gi, '/');
 
-/** 只接受知乎问题下的回答页，并去掉跟踪参数。 */
+/** 只接受知乎回答页（中文规范路径或官方英文镜像路径），并去掉跟踪参数。 */
 export function canonicalZhihuAnswerUrl(raw) {
   let candidate = decodeHtml(raw).trim();
   for (let depth = 0; depth < 2; depth += 1) {
@@ -25,7 +27,9 @@ export function canonicalZhihuAnswerUrl(raw) {
       const parsed = new URL(candidate, 'https://search.invalid');
       if (['zhihu.com', 'www.zhihu.com'].includes(parsed.hostname.toLowerCase())) {
         const match = parsed.pathname.match(ANSWER_PATH);
-        return match ? `https://www.zhihu.com/question/${match[1]}/answer/${match[2]}` : '';
+        if (match) return `https://www.zhihu.com/question/${match[1]}/answer/${match[2]}`;
+        const englishMatch = parsed.pathname.match(EN_ANSWER_PATH);
+        return englishMatch ? `https://www.zhihu.com/en/answer/${englishMatch[1]}` : '';
       }
       const nested = ['q', 'url', 'u', 'target', 'redirect_url'].map(key => parsed.searchParams.get(key)).find(value => /^https?:\/\//i.test(value || ''));
       if (!nested) return '';
@@ -148,7 +152,8 @@ export async function buildStaticJourney(manifest, readCapture) {
     const postIds = [];
     for (const post of selected) {
       usedUrls.add(post.url);
-      const id = new URL(post.url).pathname.match(ANSWER_PATH)[2];
+      const pathname = new URL(post.url).pathname;
+      const id = pathname.match(ANSWER_PATH)?.[2] || pathname.match(EN_ANSWER_PATH)?.[1];
       postIds.push(id);
       outputPosts.push({
         id, stageId: rawStage.id, question: String(post.question || ''), answerer: String(post.answerer || ''),
@@ -177,9 +182,10 @@ export async function buildStaticJourney(manifest, readCapture) {
 
 async function selfTest() {
   const direct = 'https://www.zhihu.com/question/1/answer/11?utm_source=x';
+  const english = 'https://www.zhihu.com/en/answer/13?utm_source=x';
   const redirected = `https://www.google.com/url?q=${encodeURIComponent('https://www.zhihu.com/question/1/answer/12')}`;
-  const extracted = extractAnswerCandidates(`<a href="${direct}">A</a><a href="${redirected.replaceAll('&', '&amp;')}">B</a><a href="https://evil.example/a">X</a>`);
-  if (extracted.length !== 2 || extracted[0].url.endsWith('?utm_source=x')) throw new Error('candidate extraction failed');
+  const extracted = extractAnswerCandidates(`<a href="${direct}">A</a><a href="${redirected.replaceAll('&', '&amp;')}">B</a><a href="${english}">C</a><a href="https://evil.example/a">X</a>`);
+  if (extracted.length !== 3 || extracted[0].url.endsWith('?utm_source=x') || extracted[2].url !== 'https://www.zhihu.com/en/answer/13') throw new Error('candidate extraction failed');
   const manifest = {
     slug: 'test', query: '共享单车规模为什么失败', title: 'test', limitPerStage: 2,
     stages: [{ id: 's1', from: '2016-01-01', to: '2016-12-31', period: '2016', title: '规模增长', cognition: '共享单车规模扩张', keywords: ['共享单车'], captures: ['capture.html'] }],
@@ -195,9 +201,21 @@ async function selfTest() {
 }
 
 async function main() {
-  const [manifestFile, outputFile] = process.argv.slice(2);
+  const [manifestFile, inputFile, optionalOutputFile] = process.argv.slice(2);
   if (manifestFile === '--self-test') return selfTest();
+  if (manifestFile === '--inspect') {
+    if (!inputFile) throw new Error('用法：node offline-pool.mjs --inspect <capture.html> [output.json]');
+    const candidates = extractAnswerCandidates(await readFile(path.resolve(inputFile), 'utf8'));
+    const result = { capture: path.basename(inputFile), candidateCount: candidates.length, candidates };
+    const json = `${JSON.stringify(result, null, 2)}\n`;
+    if (!optionalOutputFile) return process.stdout.write(json);
+    const output = path.resolve(optionalOutputFile);
+    await mkdir(path.dirname(output), { recursive: true });
+    await writeFile(output, json, 'utf8');
+    return process.stdout.write(`已提取 ${candidates.length} 个知乎回答链接到 ${output}\n`);
+  }
   if (!manifestFile) throw new Error('用法：node offline-pool.mjs <manifest.json> [output.json]');
+  const outputFile = inputFile;
   const absoluteManifest = path.resolve(manifestFile);
   const manifest = JSON.parse(await readFile(absoluteManifest, 'utf8'));
   const base = path.dirname(absoluteManifest);

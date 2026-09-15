@@ -155,6 +155,9 @@ const server = http.createServer(async (request, response) => {
     if (request.method === 'GET' && url.pathname === '/assets/brand/logo-mark.svg') {
       return sendFile(response, 'assets/brand/logo-mark.svg', 'image/svg+xml; charset=utf-8', 'public, max-age=86400');
     }
+    if (request.method === 'GET' && url.pathname === '/assets/kan-shan-button.png') {
+      return sendFile(response, 'assets/kan-shan-button.png', 'image/png', 'public, max-age=86400');
+    }
     if (request.method === 'GET' && url.pathname === '/api/v1/health') return json(request, response, 200, {
       status: 'ok',
       configured: { zhihu: Boolean(process.env.ZHIHU_ACCESS_SECRET), deepseek: Boolean(process.env.DEEPSEEK_API_KEY), oauth: oauth.oauthConfig().configured },

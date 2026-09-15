@@ -75,10 +75,10 @@ const workspace = await mkdtemp(path.join(tmpdir(), 'zhihu-e2e-'));
 const legacyJourneyDir = path.join(workspace, 'legacy-journey');
 await mkdir(legacyJourneyDir, { recursive: true });
 await writeFile(path.join(legacyJourneyDir, 'seed.json'), JSON.stringify({
-  version: 4, query: '共享单车为什么失败？', preference: 'default', source: 'zhihu',
+  version: 5, query: '共享单车为什么失败？', preference: 'default', source: 'zhihu',
   fetchedAt: Date.now(), fetchedAtIso: new Date().toISOString(),
   result: {
-    query: '共享单车为什么失败？', title: '共享单车：从规模神话到单位经济性',
+    query: '共享单车为什么失败？', retrievalQuery: '共享单车为什么失败？', title: '共享单车：从规模神话到单位经济性',
     thesis: '预置缓存', candidateStageCount: 1, stages: [{ id: 'stage-1', period: '2015—2017', startYear: 2015, endYear: 2017, ongoing: false, approximate: true, keywords: ['创新', '资本', '便利'], importance: 'core', salience: 90, reason: '规模扩张与整合是主线转折', cognition: '被视为创新', change: '', evidence: '', postIds: [] }],
     posts: [], limitations: ['预置缓存'], coverage: 'sampled', evidenceCount: 0, selectedCount: 0,
   },
